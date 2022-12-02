@@ -1,8 +1,8 @@
 from setuptools import find_packages, setup
 
 setup(
-    name='hive',
-    packages=find_packages(include=['hive']),
+    name='withhive',
+    packages=find_packages(include=['withhive']),
     version='0.1.0',
     description='Python binding for Com2Us Hive API.',
     author='ziddia',
