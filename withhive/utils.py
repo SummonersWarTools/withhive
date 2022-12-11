@@ -3,11 +3,31 @@ import base64
 import time
 import math
 import json
+import random
+import string
+import binascii
 
+from Crypto import Random
 from Crypto.PublicKey import RSA
-from Crypto.Cipher import PKCS1_v1_5
+from Crypto.Cipher import PKCS1_v1_5, AES
+from Crypto.Util.Padding import pad
 
 from .constants import HIVE_API_GUEST_KEY
+
+def hive_auth_crypto(data):
+    key = binascii.unhexlify("22b97083e9d02ba0ccfbe1a164f2d97e9659a7cff684a0509537656d626d2277")
+    iv = binascii.unhexlify("5783fee74f4701d446309189c95ff236")
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+
+    ct = cipher.encrypt(pad(data.encode("utf-8"), AES.block_size))
+    body = {
+        "iv": "5783fee74f4701d446309189c95ff236",
+        "s": "267f6e6626d32701",
+        "d": "h0epeqzq6l5k",
+        "ct": base64.b64encode(ct)
+    }
+
+    return body
 
 # utility function for making a signed request to the Hive API
 def hive_signed_request(endpoint, body = {}):

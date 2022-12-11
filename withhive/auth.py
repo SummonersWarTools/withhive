@@ -1,5 +1,10 @@
-from .utils import hive_signed_request
-from .constants import HIVE_API_GUEST_GENERATE, HIVE_API_GUEST_LOGIN
+from .utils import hive_signed_request, hive_auth_crypto
+from .constants import HIVE_API_GUEST_GENERATE, HIVE_API_GUEST_LOGIN, HIVE_API_AUTH, HIVE_AUTH_PAGE, HIVE_API_LOGIN, HIVE_API_OTP, HIVE_API_OTP_COMPLETE, HIVE_API_AUTH_BODY
+
+import hashlib
+import requests
+import json
+from urllib.parse import urlparse, parse_qs
 
 class HiveUser:
     """Superclass for Hive authentication which should not be used directly."""
@@ -23,9 +28,47 @@ class HiveUser:
 
 # Full Hive user - currently unsupported. Intended for use with login credentials.
 class HiveFullUser(HiveUser):
-    """Represents a full Hive user with a verified account. Currently support for full Hive users is limited."""
-    def authenticate(self, uid = None):
-        raise HiveAuthException("Full Hive users are not yet supported. Use HiveGuestUser instead.")
+    SESSION_KEY = None
+
+    def parse_login(self, scheme):
+        parsed = urlparse(scheme)
+        params = parse_qs(parsed.query)
+        if int(params['error_code'][0]) != 0: raise HiveAuthException(f"Failed to login to Hive with authenticated user - login completed but error code is {params['error_code'][0]}")
+        self.HIVE_UID = params['uid'][0]
+        self.PEPPERMINT_TOKEN = params['peppermint'][0].replace(" ", "+")
+        self.SESSION_KEY = params['sessionkey'][0]
+
+    """Represents a full Hive user with a verified account."""
+    def authenticate(self, username = None, password = None):
+        s = requests.Session()
+        s.post(HIVE_API_AUTH, json=HIVE_API_AUTH_BODY)
+
+        lk_text = s.get(HIVE_AUTH_PAGE)
+        lk = lk_text.text.split('id="lk" value="')[1].split('"')[0]
+        dkagh = hashlib.md5(password.encode('utf-8')).hexdigest()
+
+        login_response = s.post(HIVE_API_LOGIN, data={"id": username, "lk": lk, "dkagh": dkagh})
+        
+        if login_response.json()['res_data']['scheme'] == "../acv_otp_main":
+            hive_otp = input(f"Hive auth for this user requires MFA. Please enter MFA code: ")
+            hive_otp = int(hive_otp)
+
+            body = hive_auth_crypto(json.dumps({"code": f"{hive_otp}"}))
+            print(body)
+
+            otp_response = s.post(HIVE_API_OTP, json=body)
+            print(otp_response)
+            print(otp_response.text)
+
+            otp_complete = s.get(HIVE_API_OTP_COMPLETE)
+            print(otp_complete)
+            print(otp_complete.headers)
+            print(otp_complete.text)
+
+        elif "c2shub://login" in login_response.json()['res_data']['scheme']:
+            self.parse_login(login_response.json()['res_data']['scheme'])
+        else:
+            raise HiveAuthException(f"Failed to login to Hive with authenticated user - incorrect post-login scheme: {login_response.json()['res_data']['scheme']}")
 
 # Represents a Guest user to the Hive authentication system. Guest users are nice and simple to use.
 # The HiveGuestUser class will handle authentication steps, and can optionally use a pre-existing guest UID to avoid the overhead of setting up a new Guest every time the system is restarted.
